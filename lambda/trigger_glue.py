@@ -1,32 +1,36 @@
 import json
 import boto3
+import urllib.parse
 
 glue = boto3.client("glue")
+
+GLUE_JOB_NAME = "bronze_to_silver_job"
+SILVER_BASE_PATH = "s3://eshaan-spark-silver/aml"
 
 def lambda_handler(event, context):
     print("Received event:", json.dumps(event))
 
-    if "Records" not in event:
-        print("Not an S3 event. Skipping.")
-        return {"status": "ignored"}
-
+    # Extract S3 info
     record = event["Records"][0]
     bucket = record["s3"]["bucket"]["name"]
-    key = record["s3"]["object"]["key"]
+    key = urllib.parse.unquote_plus(record["s3"]["object"]["key"])
 
-    if not key.endswith(".csv"):
-        print(f"Skipping non-CSV file: {key}")
-        return {"status": "skipped"}
+    # Build bronze path (folder level)
+    bronze_path = f"s3://{bucket}/" + "/".join(key.split("/")[:-1])
+
+    print("Bronze path:", bronze_path)
 
     response = glue.start_job_run(
-        JobName="bronze_to_silver_job",
+        JobName=GLUE_JOB_NAME,
         Arguments={
-            "--SOURCE_BUCKET": bucket,
-            "--SOURCE_KEY": key
+            "--BRONZE_PATH": bronze_path,
+            "--SILVER_PATH": SILVER_BASE_PATH
         }
     )
 
+    print("Glue job triggered:", response["JobRunId"])
+
     return {
-        "status": "started",
-        "jobRunId": response["JobRunId"]
+        "statusCode": 200,
+        "body": json.dumps("Glue job triggered successfully")
     }
